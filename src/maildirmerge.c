@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -65,7 +67,7 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "    Ignore seen status when POP3 detected proceed to merge all mail into the destination.\n");
 	fprintf(o, "    This is mutually exclusive with --pop3-redirect.\n");
 	fprintf(o, "    By default any previously seen messages are left behind if the destination\n");
-	fprintf(o, "    Is detected to have POP3 active.  It doesn't care when last POP3 has been used currently.\n");
+	fprintf(o, "    is detected to have POP3 active.  It doesn't care when last POP3 has been used currently.\n");
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
@@ -75,7 +77,7 @@ static
 struct maildir_type_list* maildir_find_type(const char* folder)
 {
 	const struct maildir_type_list* test = type_list;
-	struct maildir_type_list *result;
+	struct maildir_type_list *result = NULL;
 
 	while(test) {
 		if (test->type->detect(folder))
@@ -155,6 +157,18 @@ int maildir_create_sub(int bfd, const char* target, const char* foldername)
 		return -1;
 	}
 
+	if (dry_run) {
+		/* this is outright nasty */
+		printf("Would create maildir %s/%s (assuming it doesn't exist).\n",
+				target, foldername);
+		fd = get_maildir_fd_at(bfd, foldername);
+		if (fd < 0) {
+			/* this is outright wrong, but it works */
+			fd = dup(bfd);
+		}
+		return fd;
+	}
+
 	if (mkdirat(bfd, foldername, st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) == 0) {
 		fd = openat(bfd, foldername, O_RDONLY);
 		if (fd < 0) {
@@ -190,7 +204,7 @@ int maildir_create_sub(int bfd, const char* target, const char* foldername)
 static
 int message_seen(const char* filename)
 {
-	const char* p = strchr("filename", ':');
+	const char* p = strchr(filename, ':');
 	const char* c;
 	if (!p) {/* definitely no flags, so can't be seen */
 		fprintf(stderr, "WARNING: No colon (info delimeter) found in %s.\n", filename);
@@ -208,9 +222,10 @@ int message_seen(const char* filename)
 	}
 
 	while (*++c) {
+		printf("p:%c\n", *c);
 		if (*c == 'S')
 			return 1;
-		if (*c == ',') /* Dovecot extension */
+		if (*c == ',') /* Dovecot extension, we can terminate here */
 			return 0;
 	}
 	return 0;
@@ -238,8 +253,10 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 	const struct maildir_type *stype = NULL;
 	int sourcefd = get_maildir_fd(source);
 	int sfd = -1, tfd = -1, rfd = -1;
+	char *redirectname = NULL;
 	struct stat st;
 	int is_pop3 = 0;
+	void *stype_pvt = NULL;
 
 	DIR* dir;
 	struct dirent *de;
@@ -257,6 +274,9 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 
 		stype = source_types->type;
 		maildir_type_list_free(source_types);
+
+		if (stype->open)
+			stype_pvt = stype->open(source, sourcefd);
 	}
 
 	printf("Merging %s (%s) into %s.\n", source, stype ? stype->label : "no type detected", target);
@@ -338,10 +358,50 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 				continue;
 		}
 
+		if (!is_pop3 || pop3_merge_seen || !message_seen(de->d_name)) {
+			maildir_move(sfd, source, tfd, target, "cur", de->d_name);
+			if (pop3_uidl) {
+				if (!stype->pop3_get_uidl) {
+					fprintf(stderr, "UIDL transfer requested but source doesn't support UIDL retrieval.\n");
+				} else {
+					char *basename = strdupa(de->d_name);
+					char *t = strchr(basename, ':');
+					if (t)
+						*t = 0; /* truncate the fields out of there. */
+					char *uidl = stype->pop3_get_uidl(stype_pvt, basename);
 
+					if (uidl) {
+						if (dry_run) {
+							printf("Setting UIDL to %s\n", uidl);
+						} else {
+							for (ti = target_types; ti; ti = ti->next) {
+								if (ti->type->pop3_set_uidl)
+									ti->type->pop3_set_uidl(ti->pvt, basename, uidl);
+							}
+						}
+						free(uidl);
+					}
+				}
+			}
+		} else if (pop3_redirect) {
+			if (rfd < 0) {
+				rfd = maildir_create_sub(tfd, target, pop3_redirect);
+				if (rfd < 0)
+					exit(1);
+				asprintf(&redirectname, "%s/%s", target, pop3_redirect);
+			}
+
+			maildir_move(sfd, source, rfd, redirectname, "cur", de->d_name);
+		} else if (dry_run) {
+			printf("%s/cur/%s: left behind (seen, target is POP3, no redirect).\n",
+					source, de->d_name);
+		}
 	}
 
 out:
+	if (stype && stype->close)
+		stype->close(stype_pvt);
+
 	close(sourcefd);
 	if (sfd >= 0)
 		close(sfd);
