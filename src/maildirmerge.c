@@ -317,6 +317,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 
 		maildir_move(sfd, source, tfd, target, "new", de->d_name);
 	}
+	closedir(dir); dir = NULL;
 	close(sfd); sfd = -1;
 	close(tfd); tfd = -1;
 
@@ -385,7 +386,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 			}
 		} else if (pop3_redirect) {
 			if (rfd < 0) {
-				rfd = maildir_create_sub(tfd, target, pop3_redirect);
+				rfd = maildir_create_sub(targetfd, target, pop3_redirect);
 				if (rfd < 0)
 					exit(1);
 				asprintf(&redirectname, "%s/%s", target, pop3_redirect);
@@ -398,9 +399,106 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 		}
 	}
 
+	closedir(dir); dir = NULL;
+	close(sfd); sfd = -1;
+	close(tfd); tfd = -1;
+	if (rfd >= 0) {
+		close(rfd);
+		rfd = -1;
+	}
+
+	/* at this point, we scan for sub-folders, those are folders starting with
+	 * ., which isn't . or .., at which point we create the sub-folders, and
+	 * recursively merge into them. */
+	dir = fdopendir(sourcefd);
+	if (!dir) {
+		perror(source);
+		goto out;
+	}
+
+	while ((de = readdir(dir))) {
+		switch (de->d_type) {
+			case DT_DIR:
+				break;
+			case DT_UNKNOWN:
+				if (fstatat(sfd, de->d_name, &st, 0) < 0) {
+					fprintf(stderr, "%s/cur/%s: %s\n", source, de->d_name, strerror(errno));
+					continue;
+				}
+
+				if ((st.st_mode & S_IFMT) == S_IFDIR)
+					break;
+				/* FALLTHROUGH */
+			default:
+				continue;
+		}
+		if (de->d_name[0] != '.' || strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+			continue;
+
+		printf("sub folder: %s\n", de->d_name);
+
+		if (fstatat(targetfd, de->d_name, &st, 0) == 0) {
+			/* we know both the source and destination exist, so we can just go recursively here */
+			char *sub_target;
+			char *sub_source;
+			int sub_target_fd = get_maildir_fd_at(targetfd, de->d_name);
+			if (sub_target_fd < 0)
+				continue;
+
+			if (asprintf(&sub_target, "%s/%s", target, de->d_name) < 0) {
+				fprintf(stderr, "memory error trying to merge %s from %s to %s.\n",
+						de->d_name, source, target);
+				close(sub_target_fd);
+				continue;
+			}
+			if (asprintf(&sub_source, "%s/%s", source, de->d_name) < 0) {
+				fprintf(stderr, "memory error trying to merge %s from %s to %s.\n",
+						de->d_name, source, target);
+				free(sub_target);
+				close(sub_target_fd);
+				continue;
+			}
+
+			struct maildir_type_list *sub_target_types = maildir_find_type(sub_target);
+			for (ti = sub_target_types; ti; ti = ti->next) {
+				printf("%s: Detected type: %s\n", sub_target, ti->type->label);
+				if (ti->type->open)
+					ti->pvt = ti->type->open(sub_target, sub_target_fd);
+			}
+
+			maildir_merge(sub_target, sub_target_fd, sub_target_types, sub_source);
+
+			maildir_type_list_free(sub_target_types);
+			free(sub_source);
+			free(sub_target);
+			close(sub_target_fd);
+
+		} else if (errno == ENOENT) {
+			/* it doesn't exist, so we can simply rename into, and then check subscriptions */
+			maildir_move(sourcefd, source, targetfd, target, "", de->d_name);
+
+			if (stype->imap_is_subscribed && stype->imap_is_subscribed(stype_pvt, de->d_name)) {
+				if (dry_run) {
+					printf("Will subscribe to %s on target.\n", de->d_name);
+				} else {
+					for (ti = target_types; ti; ti = ti->next) {
+						if (ti->type->imap_subscribe)
+							ti->type->imap_subscribe(ti->pvt, de->d_name);
+					}
+				}
+			}
+		} else {
+			fprintf(stderr, "%s/%s: %s\n", target, de->d_name, strerror(errno));
+		}
+	}
+	closedir(dir); dir = NULL;
+
 out:
 	if (stype && stype->close)
 		stype->close(stype_pvt);
+
+	if (dir)
+		closedir(dir);
 
 	close(sourcefd);
 	if (sfd >= 0)
@@ -409,6 +507,9 @@ out:
 		close(tfd);
 	if (rfd >= 0)
 		close(rfd);
+
+	if (redirectname)
+		free(redirectname);
 }
 
 static struct option options[] = {
