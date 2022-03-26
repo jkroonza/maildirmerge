@@ -222,7 +222,6 @@ int message_seen(const char* filename)
 	}
 
 	while (*++c) {
-		printf("p:%c\n", *c);
 		if (*c == 'S')
 			return 1;
 		if (*c == ',') /* Dovecot extension, we can terminate here */
