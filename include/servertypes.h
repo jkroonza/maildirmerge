@@ -16,6 +16,14 @@ struct maildir_type {
 	 * a POP3 client */
 	int (*is_pop3)(void* pvt);
 
+	/* must allocate the string, will be free'd with free,
+	 * return NULL if no UIDL available */
+	char* (*pop3_get_uidl)(void *pvt, const char* basename);
+
+	/** set the POP3 UIDL value
+	 */
+	void (*pop3_set_uidl)(void* pvt, const char* basename, const char* uidl);
+
 	/** close the structure, fee stuff */
 	void (*close)(void* pvt);
 };
