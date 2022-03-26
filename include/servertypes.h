@@ -24,6 +24,10 @@ struct maildir_type {
 	 */
 	void (*pop3_set_uidl)(void* pvt, const char* basename, const char* uidl);
 
+	/** fldrname is as per directory, so may need to prefix with eg INBOX. as per rquirement */
+	int (*imap_is_subscribed)(void* pvt, const char* fldrname);
+	void (*imap_subscribe)(void* pvt, const char* fldrname);
+
 	/** close the structure, fee stuff */
 	void (*close)(void* pvt);
 };

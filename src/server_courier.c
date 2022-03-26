@@ -6,6 +6,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/sendfile.h>
 
 struct courier_data {
 	const char* folder;
@@ -66,6 +69,98 @@ void* courier_open(const char* folder, int dirfd)
 //}
 
 static
+int courier_imap_is_subscribed(void* _p, const char* fldrname)
+{
+	struct courier_data *p = _p;
+	char linebuf[2048];
+
+	// all subfolders in courier starts with INBOX.
+
+	int fd = openat(p->dirfd, "courierimapsubscribed", O_RDONLY, 0);
+	if (fd < 0) {
+		fprintf(stderr, "%s/%s: %s\n", p->folder, "courierimapsubscribed", strerror(errno));
+		return 0; /* best guess */
+	}
+
+	FILE* fp = fdopen(fd, "r");
+	if (!fp) {
+		fprintf(stderr, "%s/%s: %s\n", p->folder, "courierimapsubscribed", strerror(errno));
+		return 0; /* best guess */
+	}
+
+	while (fgets(linebuf, sizeof(linebuf), fp)) {
+		char *nl = strchr(linebuf, '\n');
+		if (nl)
+			*nl = 0;
+		if (strncmp("INBOX", linebuf, strlen("INBOX")))
+			continue;
+		if (strcmp(fldrname, linebuf + strlen("INBOX")))
+			continue;
+		return 1;
+	}
+
+	return 0;
+}
+
+static
+void courier_imap_subscribe(void* _p, const char* fldrname)
+{
+	struct courier_data *p = _p;
+	char tmpfname[1024];
+	struct stat st;
+	mode_t mode = 0644;
+	int tfd, stvalid = 0, r;
+	int sfd = openat(p->dirfd, "courierimapsubscribed", O_RDONLY, 0);
+	if (sfd < 0 && errno != ENOENT) {
+			/* ENOENT - no subscriptions, so no harm in creating */
+			fprintf(stderr, "%s/%s: %s\n", p->folder, "courierimapsubscribed", strerror(errno));
+			return;
+	}
+
+	if ((sfd >= 0 && fstat(sfd, &st) == 0) || fstat(p->dirfd, &st)) {
+		stvalid = 1;
+		mode = st.st_mode & 0666;
+	}
+
+	do {
+		sprintf(tmpfname, "tmp/maildirmerge-courier-%d", rand());
+	} while ((tfd = openat(p->dirfd, tmpfname, O_WRONLY | O_CREAT | O_EXCL, mode)) < 0 && errno == EEXIST);
+
+	if (tfd < 0) {
+		fprintf(stderr, "%s/%s: %s\n", p->folder, tmpfname, strerror(errno));
+		if (sfd >= 0)
+			close(sfd);
+		return;
+	}
+
+	if (stvalid && geteuid() == 0)
+		fchown(tfd, st.st_uid, st.st_gid);
+
+	if (sfd >= 0) {
+		while ((r = sendfile(tfd, sfd, NULL, 16384)) > 0);
+		if (r < 0) {
+			fprintf(stderr, "%s/%s: %s\n", p->folder, tmpfname, strerror(errno));
+			close(sfd);
+			close(tfd);
+			unlinkat(p->dirfd, tmpfname, 0);
+			return;
+		}
+		close(sfd);
+	}
+
+	write(tfd, "INBOX", strlen("INBOX"));
+	write(tfd, fldrname, strlen(fldrname));
+	write(tfd, "\n", 1);
+	close(tfd);
+
+	if (renameat(p->dirfd, tmpfname, p->dirfd, "courierimapsubscribed") < 0) {
+		fprintf(stderr, "%s => %s/courierimapsubscribed: %s\n", tmpfname, p->folder,
+				strerror(errno));
+		unlinkat(p->dirfd, tmpfname, 0);
+	}
+}
+
+static
 void courier_close(void* _p)
 {
 	free(_p);
@@ -87,6 +182,8 @@ static struct maildir_type maildir_courier = {
 	.is_pop3 = courier_is_pop3,
 //	.pop3_get_uidl = courier_pop3_get_uidl,
 //	.pop3_set_uidl = courier_pop3_set_uidl,
+	.imap_is_subscribed = courier_imap_is_subscribed,
+	.imap_subscribe = courier_imap_subscribe,
 	.close = courier_close,
 };
 
