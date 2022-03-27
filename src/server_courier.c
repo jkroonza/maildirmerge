@@ -117,7 +117,7 @@ void courier_imap_subscribe(void* _p, const char* fldrname)
 			return;
 	}
 
-	if ((sfd >= 0 && fstat(sfd, &st) == 0) || fstat(p->dirfd, &st)) {
+	if ((sfd >= 0 && fstat(sfd, &st) == 0) || fstat(p->dirfd, &st) == 0) {
 		stvalid = 1;
 		mode = st.st_mode & 0666;
 	}
