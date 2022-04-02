@@ -6,3 +6,9 @@ Was written as a kind of "quick fix" to emrge maildirs semi intelligently.  The 
 
 1.  POP3 users will re-download everything in INBOX - in our case the largest count here would have been ~140k emails.
 2.  IMAP users will also re-download everything, several TB in total here due to the uidb databases getting clobbered.
+
+## maildirsizes
+Very simple tool to deduce the maildir size from the filenames.
+
+Essentially it will just do recursive readdir() to extract filenames and just
+sum it all up, outputting per folder and totals (depending on arguments given).

@@ -1,5 +1,6 @@
-TARGET_BINS=maildirmerge
+TARGET_BINS=maildirmerge maildirsizes
 
 MODS_maildirmerge=maildirmerge server_courier
+MODS_maildirsizes=maildirsizes
 
 include Makefile.inc
