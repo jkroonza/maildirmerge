@@ -53,7 +53,7 @@ void __attribute__((noreturn)) usage(int x)
 
 	fprintf(o, "USAGE: %s [options] destfolder sourcefolder [...]\n", progname);
 	fprintf(o, "IMPORTANT:  sourcefolders will be migrated (merged) into destfolder.\n");
-	fprintf(o, "  If all goes well the source will no longer exist.\n");
+	fprintf(o, "  The emails will be REMOVED from the sourcefolders.\n");
 	fprintf(o, "OPTIONS:\n");
 	fprintf(o, "  -f|--force\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
