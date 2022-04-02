@@ -531,25 +531,25 @@ int main(int argc, char** argv)
 
 	while ((c = getopt_long(argc, argv, "fhn", options, NULL)) != -1) {
 		switch (c) {
-			case 0:
-				break;
-			case 'f':
-				force = 1;
-				break;
-			case 'n':
-				dry_run = 1;
-				break;
-			case 'r':
-				pop3_redirect = optarg;
-				break;
-			case 'h':
-				usage(0);
-			case '?':
-				fprintf(stderr, "Unrecognised option encountered.\n");
-				usage(1);
-			default:
-				fprintf(stderr, "Option not implemented: %c.\n", c);
-				exit(1);
+		case 0:
+			break;
+		case 'f':
+			force = 1;
+			break;
+		case 'n':
+			dry_run = 1;
+			break;
+		case 'r':
+			pop3_redirect = optarg;
+			break;
+		case 'h':
+			usage(0);
+		case '?':
+			fprintf(stderr, "Unrecognised option encountered.\n");
+			usage(1);
+		default:
+			fprintf(stderr, "Option not implemented: %c.\n", c);
+			exit(1);
 		}
 	}
 
