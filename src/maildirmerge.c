@@ -316,8 +316,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 
 		maildir_move(sfd, source, tfd, target, "new", de->d_name);
 	}
-	closedir(dir); dir = NULL;
-	close(sfd); sfd = -1;
+	closedir(dir); dir = NULL; sfd = -1;
 	close(tfd); tfd = -1;
 
 	/* the cur folder is somewhat more involved, there are IMAP UID values, as well
@@ -388,6 +387,13 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 				rfd = maildir_create_sub(targetfd, target, pop3_redirect);
 				if (rfd < 0)
 					exit(1);
+				int t = openat(rfd, "cur", O_RDONLY);
+				close(rfd);
+				rfd = t;
+				if (rfd < 0) {
+					fprintf(stderr, "%s/%s/cur: %s\n", target, pop3_redirect, strerror(errno));
+					exit(1);
+				}
 				asprintf(&redirectname, "%s/%s", target, pop3_redirect);
 			}
 
@@ -398,8 +404,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 		}
 	}
 
-	closedir(dir); dir = NULL;
-	close(sfd); sfd = -1;
+	closedir(dir); dir = NULL; sfd = -1;
 	close(tfd); tfd = -1;
 	if (rfd >= 0) {
 		close(rfd);
@@ -490,7 +495,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 			fprintf(stderr, "%s/%s: %s\n", target, de->d_name, strerror(errno));
 		}
 	}
-	closedir(dir); dir = NULL;
+	closedir(dir); dir = NULL; sourcefd = -1;
 
 out:
 	if (stype && stype->close)
