@@ -98,7 +98,6 @@ void calc_size(int dir_fd, size_t *total_size, size_t *total_count, const char* 
 			++count;
 		}
 		closedir(d);
-		close(sub_fd);
 	}
 
 	*total_size += size;
@@ -172,7 +171,6 @@ void proc_path(const char* path)
 		calc_size(sfd, &msgsize, &msgcount, de->d_name);
 	}
 	closedir(d);
-	close(fd);
 
 	switch (output) {
 	case OUTPUT_ALL:
