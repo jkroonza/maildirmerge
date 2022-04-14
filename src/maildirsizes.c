@@ -169,6 +169,7 @@ void proc_path(const char* path)
 		}
 
 		calc_size(sfd, &msgsize, &msgcount, de->d_name);
+		close(sfd);
 	}
 	closedir(d);
 
