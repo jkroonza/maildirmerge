@@ -137,6 +137,24 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 	DIR *dir;
 	struct dirent *de;
 	struct msg_list *mlist = NULL, *slist;
+	struct stat st;
+
+	if (fstatat(fd, "maildirfolder", &st, 0) < 0) {
+		if (errno != ENOENT) {
+			add_error(ec, "maildirfolder: %s", strerror(errno));
+		} else if (*rpath) {
+			add_error(ec, "Expected to find a file called maildirfolder");
+		}
+	} else if (!*rpath) {
+		add_error(ec, "Did not expect to find a file called maildirfolder");
+	} else {
+		if (st.st_size)
+			add_error(ec, "maildirfolder file should be empty.");
+		if (st.st_uid != uid)
+			add_error(ec, "maildirfolder: Wrong ownership, uid=%lu is not %lu.", (unsigned long)st.st_uid, (unsigned long)uid);
+		if (st.st_gid != gid)
+			add_error(ec, "maildirfolder: Wrong group, gid=%lu is not %lu.", (unsigned long)st.st_gid, (unsigned long)gid);
+	}
 
 	check_ownership(fd, "", ec, ".");
 	for (sp = maildir_subs; *sp; ++sp) {
