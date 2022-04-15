@@ -14,19 +14,82 @@
 
 static const char * progname;
 static const char * maildir_subs[] = { "cur", "new", "-tmp", NULL };
+static const char * valid_flags = "PRSTDF";
+
 /* tmp/ needs not be scanned.
- * ordering critical as stuff gets moved from new/ to cur/,
+ * ordering critical as stuff gets rename()d from new/ to cur/,
  * and thus we need to get filenames from cur/ first else we
  * can see a filename first in new/ and then in cur/ triggering an error
+ * - indicates we don't need to scan.
+ * + indicates that we must have :2, and optional flags.
  **/
 
 struct msg_list {
-	const char* basename; /* unique */
-	const char **fullnames; /* NULL terminated */
+	char* basename; /* unique */
+	char **fullnames; /* NULL terminated */
 	struct msg_list *next;
 };
 
-#define free_msg_list(x) do { while ((x)) { msg_list*t = (x)->next; free((x)->basename); const char** t2; for (t2 = (x)->fullnames; t2; ++t2) { free(t2); } free(x); }} while(0)
+static
+void msg_list_free(struct msg_list *m)
+{
+	struct msg_list *t;
+	char **ff;
+	while (m) {
+		t = m->next;
+
+		free(m->basename);
+		for (ff = m->fullnames; *ff; ++ff)
+			free(*ff);
+		free(m->fullnames);
+		free(m);
+
+		m = t;
+	}
+}
+
+static
+void msg_list_add(struct msg_list **mlist, const char* sub, const char* fn)
+{
+	const char* base = fn;
+	const char* colon = strchr(fn, ':');
+	if (colon)
+		base = strndupa(fn, colon - fn);
+
+	/* insert in ASCII order, this is probably the worst choice */
+	while (*mlist && strcmp((*mlist)->basename, base) < 0)
+		mlist = &(*mlist)->next;
+
+	if (*mlist && strcmp((*mlist)->basename, base) == 0) {
+		/* error condition, base is not unique, just add to the fullnames. */
+		int i = 0;
+		while ((*mlist)->fullnames[i++])
+			;
+		(*mlist)->fullnames = realloc((*mlist)->fullnames, sizeof(*(*mlist)->fullnames) * (i+1));
+		asprintf(&(*mlist)->fullnames[i++], "%s/%s", sub, fn);
+		(*mlist)->fullnames[i] = NULL;
+	} else {
+		struct msg_list *n = malloc(sizeof(struct msg_list));
+		n->basename = strdup(base);
+		n->fullnames = malloc(sizeof(*n->fullnames) * 2);
+		asprintf(&n->fullnames[0], "%s/%s", sub, fn);
+		n->fullnames[1] = NULL;
+		n->next = *mlist;
+		*mlist = n;
+	}
+}
+
+static
+void __attribute__((unused)) msg_list_dump(const struct msg_list *m)
+{
+	while (m) {
+		printf("base: %s\n", m->basename);
+		char** fn = m->fullnames;
+		while (*fn)
+			printf(" - %s\n", *fn++);
+		m = m->next;
+	}
+}
 
 /* This is designed to "accomodate" a glusterfs bug w.r.t. linkto files that
  * doesn't properly heal. Since we are VERY certain that we got a readdir()
@@ -70,14 +133,19 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 	int ec = 0, sfd;
 	printf("INBOX%s:", rpath); fflush(stdout);
 	int noscan;
+	int forceflags;
 	DIR *dir;
 	struct dirent *de;
+	struct msg_list *mlist = NULL, *slist;
 
 	check_ownership(fd, "", ec, ".");
 	for (sp = maildir_subs; *sp; ++sp) {
 		subname = *sp;
 		noscan = *subname == '-';
 		if (noscan)
+			++subname;
+		forceflags = *subname == '+';
+		if (forceflags)
 			++subname;
 		sfd = openat(fd, subname, O_RDONLY);
 		if (sfd < 0) {
@@ -98,9 +166,59 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			close(sfd);
 		} else {
 			while ((de = readdir(dir))) {
+				if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+					continue;
 				check_ownership(sfd, de->d_name, ec, "%s/%s", subname, de->d_name);
+				msg_list_add(&mlist, subname, de->d_name);
+
+				const char* colon = strchr(de->d_name, ':');
+				if (!colon) {
+					if (forceflags)
+						add_error(ec, "%s/%s: in folder that requires flags (:2, in filename).\n",
+								subname, de->d_name);
+				} else if (strncmp(":2,", colon, 3) == 0) {
+					int alphabetic = 1;
+					char last_flag = 0;
+					for (const char* flag = colon + 3; *flag; ++flag) {
+						if (*flag == ',') {
+							/* dovecot extended for this, warn about it but don't error on it */
+							printf("\n%s/%s: warning: , found in flags, indicative of Dovecot extensions.", subname, de->d_name);
+							break;
+						}
+
+						alphabetic &= *flag > last_flag;
+						if (!strchr(valid_flags, *flag))
+							add_error(ec, "%s/%s: invalid flag %c found.", subname, de->d_name, last_flag);
+
+						last_flag = *flag;
+					}
+					if (!alphabetic)
+						add_error(ec, "%s/%s: flags are not in alphabetic order.", subname, de->d_name);
+				} else {
+					add_error(ec, "%s/%s: flags marker is not recognized, expected :2, - probably an unsupported version ...\n", subname, de->d_name);
+				}
 			}
 			closedir(dir);
+		}
+	}
+
+	for (slist = mlist; slist; slist = slist->next) {
+		/* Whilst base name has a structure, it really doesn't matter ...  the
+		 * structure is merely intended to produce a unique - we NEED it to be
+		 * unique, else the POP3 and IMAP servers tend to die. */
+
+		/* We checked the filename structure above, so don't bother again,
+		 * just check for duplicates here */
+		if (slist->fullnames[1]) {
+			// we know there is more than one, count them.
+			int i;
+			for (i = 1; slist->fullnames[i]; ++i)
+				;
+			add_error(ec, "%s: %d occurences, which means stuff is not unique.",
+					slist->basename, i);
+			for (i = 0; slist->fullnames[i]; ++i)
+				printf("\n - %s", slist->fullnames[i]);
+			fflush(stdout);
 		}
 	}
 
@@ -109,6 +227,10 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 	} else {
 		printf(" All Good.\n");
 	}
+
+	//msg_list_dump(mlist);
+	msg_list_free(mlist);
+
 	return ec;
 }
 
