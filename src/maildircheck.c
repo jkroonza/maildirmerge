@@ -66,7 +66,7 @@ void msg_list_add(struct msg_list **mlist, const char* sub, const char* fn)
 		while ((*mlist)->fullnames[i++])
 			;
 		(*mlist)->fullnames = realloc((*mlist)->fullnames, sizeof(*(*mlist)->fullnames) * (i+1));
-		asprintf(&(*mlist)->fullnames[i++], "%s/%s", sub, fn);
+		asprintf(&(*mlist)->fullnames[i-1], "%s/%s", sub, fn);
 		(*mlist)->fullnames[i] = NULL;
 	} else {
 		struct msg_list *n = malloc(sizeof(struct msg_list));
