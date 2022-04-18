@@ -113,8 +113,7 @@ int myfstatat(int dirfd, const char *restrict pathname, struct stat *restrict st
 
 #define add_error(ec, fmt, ...) do { printf("\n" fmt, ## __VA_ARGS__); fflush(stdout); ++(ec); } while(0)
 
-#define check_ownership(fd, path, ec, fmt, ...) do { \
-	struct stat st; \
+#define check_ownership(fd, path, st, ec, fmt, ...) do { \
 	if (myfstatat(fd, path, &st, AT_EMPTY_PATH) < 0) { \
 		add_error(ec, "fstatat(" fmt "): %s - cannot check ownership", ## __VA_ARGS__, strerror(errno)); \
 	} else { \
@@ -156,7 +155,7 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			add_error(ec, "maildirfolder: Wrong group, gid=%lu is not %lu.", (unsigned long)st.st_gid, (unsigned long)gid);
 	}
 
-	check_ownership(fd, "", ec, ".");
+	check_ownership(fd, "", st, ec, ".");
 	for (sp = maildir_subs; *sp; ++sp) {
 		subname = *sp;
 		noscan = *subname == '-';
@@ -171,7 +170,7 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			continue;
 		}
 
-		check_ownership(sfd, "", ec, "%s", subname);
+		check_ownership(sfd, "", st, ec, "%s", subname);
 
 		if (noscan) {
 			close(sfd);
@@ -186,10 +185,21 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			while ((de = readdir(dir))) {
 				if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
 					continue;
-				check_ownership(sfd, de->d_name, ec, "%s/%s", subname, de->d_name);
+				check_ownership(sfd, de->d_name, st, ec, "%s/%s", subname, de->d_name);
 				msg_list_add(&mlist, subname, de->d_name);
 
+				const char* ssize = strstr(de->d_name, "S=");
+
+				if (ssize) {
+					off_t sz = strtoul(ssize + 2, NULL, 10);
+					if (sz != st.st_size) {
+						add_error(ec, "%s/%s: found file to have size %lu, expected S=%lu.",
+								subname, de->d_name, st.st_size, sz);
+					}
+				}
+
 				const char* colon = strchr(de->d_name, ':');
+
 				if (!colon) {
 					if (forceflags)
 						add_error(ec, "%s/%s: in folder that requires flags (:2, in filename).\n",
