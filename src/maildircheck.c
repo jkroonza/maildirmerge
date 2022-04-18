@@ -117,6 +117,7 @@ int myfstatat(int dirfd, const char *restrict pathname, struct stat *restrict st
 	if (myfstatat(fd, path, &st, AT_EMPTY_PATH) < 0) { \
 		add_error(ec, "fstatat(" fmt "): %s - cannot check ownership", ## __VA_ARGS__, strerror(errno)); \
 	} else { \
+		errno = 0; \
 		if (st.st_uid != uid) \
 			add_error(ec, fmt ": Wrong ownership, uid=%lu is not %lu.", ## __VA_ARGS__, (unsigned long)st.st_uid, (unsigned long)uid); \
 		if (st.st_gid != gid) \
@@ -190,7 +191,7 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 
 				const char* ssize = strstr(de->d_name, "S=");
 
-				if (ssize) {
+				if (errno == 0 && ssize) {
 					off_t sz = strtoul(ssize + 2, NULL, 10);
 					if (sz != st.st_size) {
 						add_error(ec, "%s/%s: found file to have size %lu, expected S=%lu.",
