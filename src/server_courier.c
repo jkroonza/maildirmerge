@@ -44,6 +44,23 @@ int courier_detect(const char* folder)
 }
 
 static
+const char * const * courier_metafiles()
+{
+	static const char *flist[] = {
+		/* files */
+		"courierimapacl"
+		"courierimapsubscribed",
+		"courierimapuiddb",
+		"courierpop3dsizelist",
+		/* folders */
+		"courierimaphieracl",
+		"courierimapkeywords",
+		NULL
+	};
+	return flist;
+}
+
+static
 void* courier_open(const char* folder, int dirfd)
 {
 	struct courier_data *p = malloc(sizeof(struct courier_data));
@@ -178,6 +195,7 @@ int courier_is_pop3(void* _p)
 static struct maildir_type maildir_courier = {
 	.label = "Courier-IMAP",
 	.detect = courier_detect,
+	.metafiles = courier_metafiles,
 	.open = courier_open,
 	.is_pop3 = courier_is_pop3,
 //	.pop3_get_uidl = courier_pop3_get_uidl,

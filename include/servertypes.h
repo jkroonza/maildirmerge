@@ -7,6 +7,12 @@ struct maildir_type {
 	/** returns non-zero if the given path is detected as being of this type */
 	int (*detect)(const char* folder);
 
+	/** returns a list of files (outside of cur/new/tmp) which is used by the server
+	 * this is used by maildirreconstruct to know which additional files needs to be copied
+	 * NULL terminated, eg { "foo", "bar", NULL }.  Memory should be static.
+	 */
+	const char * const* (*metafiles)();
+
 	/** returns a point to pvt data to be used further on,
 	 * may return NULL, must exit() on failure, return will
 	 * be passed as pvt in future calls. */
@@ -43,4 +49,5 @@ struct maildir_type_list {
 void register_maildir_type(const struct maildir_type *mt);
 struct maildir_type_list* maildir_find_type(const char* folder);
 
+const char* const * maildir_get_all_metafiles();
 #endif

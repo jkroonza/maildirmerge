@@ -39,6 +39,34 @@ struct maildir_type_list* maildir_find_type(const char* folder)
 	return result;
 }
 
+const char* const * maildir_get_all_metafiles()
+{
+	static const char ** metafiles = NULL;
+
+	if (!metafiles) {
+		int c = 0;
+		struct maildir_type_list *i;
+		for (i = type_list; i; i = i->next) {
+			if (i->type->metafiles) {
+				const char* const * l = i->type->metafiles();
+				while (*l++)
+					c++;
+			}
+		}
+		metafiles = malloc(sizeof(char*) * c + 1);
+
+		c = 0;
+		for (i = type_list; i; i = i->next) {
+			if (i->type->metafiles) {
+				for (const char* const * l = i->type->metafiles(); *l; ++l)
+					metafiles[c++] = *l;
+			}
+		}
+		metafiles[c] = NULL;
+	}
+		return metafiles;
+}
+
 static
 void __attribute__((destructor)) deinit()
 {

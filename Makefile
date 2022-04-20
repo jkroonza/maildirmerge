@@ -1,9 +1,10 @@
-TARGET_BINS=maildirmerge maildirsizes maildircheck
+TARGET_BINS=maildirmerge maildirsizes maildircheck maildirreconstruct
 
 server_types=servertypes server_courier
 
 MODS_maildirmerge=maildirmerge $(server_types)
 MODS_maildirsizes=maildirsizes
 MODS_maildircheck=maildircheck
+MODS_maildirreconstruct=maildirreconstruct $(server_types)
 
 include Makefile.inc
