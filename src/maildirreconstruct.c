@@ -257,9 +257,9 @@ retry_link:
 				continue;
 			}
 
-			/* target already exist, so we need to compare them and make sure
-			 * that they are identical (in content), if not, use the larger one
-			 * and flag an error anyway */
+			/* target already exist, so we need to compare them and make
+			 * sure that they are identical (in content), if not, use the
+			 * later mtime one */
 
 			int r = files_identical(linkfrom, de->d_name, &st, linkto, de->d_name, NULL);
 
@@ -322,7 +322,6 @@ int overlay(const char* target, int targetfd, const char* source, const char* co
 			mfscan = metafiles;
 			while (*mfscan && strcmp(de->d_name, *mfscan) != 0)
 				++mfscan;
-
 
 			if (de->d_type == DT_UNKNOWN) {
 				if (fstatat(sourcefd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) < 0) {
@@ -410,9 +409,9 @@ retry_link:
 					continue;
 				}
 
-				/* target already exist, so we need to compare them and make sure
-				 * that they are identical (in content), if not, use the larger one
-				 * and flag an error anyway */
+				/* target already exist, so we need to compare them and make
+				 * sure that they are identical (in content), if not, use the
+				 * later mtime one */
 
 				int r = files_identical(sourcefd, de->d_name, &st, targetfd, de->d_name, NULL);
 
