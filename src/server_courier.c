@@ -48,7 +48,7 @@ const char * const * courier_metafiles()
 {
 	static const char *flist[] = {
 		/* files */
-		"courierimapacl"
+		"courierimapacl",
 		"courierimapsubscribed",
 		"courierimapuiddb",
 		"courierpop3dsizelist",

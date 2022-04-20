@@ -341,8 +341,6 @@ int overlay(const char* target, int targetfd, const char* source, const char* co
 
 						asprintf(&starget, "%s/%s", target, de->d_name);
 						asprintf(&ssource, "%s/%s", source, de->d_name);
-						printf("ssource:%s, starget:%s\n",
-								ssource, starget);
 						if (!starget || !ssource) {
 							fprintf(stderr, "Memory allocation error trying to traverse into %s/%s - skipping.", source, de->d_name);
 							ec++;
