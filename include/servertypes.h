@@ -32,5 +32,15 @@ struct maildir_type {
 	void (*close)(void* pvt);
 };
 
+struct maildir_type_list {
+	const struct maildir_type *type;
+	void *pvt;
+	struct maildir_type_list* next;
+};
+
+#define maildir_type_list_free(x) do { while (x) { struct maildir_type_list *_t = (x)->next; free(x); x = _t; }} while (0)
+
 void register_maildir_type(const struct maildir_type *mt);
+struct maildir_type_list* maildir_find_type(const char* folder);
+
 #endif

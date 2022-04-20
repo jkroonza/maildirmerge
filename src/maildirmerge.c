@@ -12,39 +12,10 @@
 
 #include "servertypes.h"
 
-struct maildir_type_list {
-	const struct maildir_type *type;
-	void *pvt;
-	struct maildir_type_list* next;
-};
-
-#define maildir_type_list_free(x) do { while (x) { struct maildir_type_list *_t = (x)->next; free(x); x = _t; }} while (0)
-
-static
-void maildir_type_list_prepend(struct maildir_type_list **list, const struct maildir_type *type)
-{
-	struct maildir_type_list *t = malloc(sizeof(struct maildir_type_list));
-	if (!t) {
-		perror("malloc");
-		exit(1);
-	}
-
-	t->type = type;
-	t->pvt = NULL;
-	t->next = *list;
-	*list = t;
-}
-
 static const char* progname = NULL;
-static struct maildir_type_list *type_list = NULL;
 static int force = 0, dry_run = 0, pop3_merge_seen = 0;
 static int pop3_uidl = 0;
 static const char* pop3_redirect = NULL;
-
-void register_maildir_type(const struct maildir_type* type)
-{
-	maildir_type_list_prepend(&type_list, type);
-}
 
 static
 void __attribute__((noreturn)) usage(int x)
@@ -71,21 +42,6 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
-}
-
-static
-struct maildir_type_list* maildir_find_type(const char* folder)
-{
-	const struct maildir_type_list* test = type_list;
-	struct maildir_type_list *result = NULL;
-
-	while(test) {
-		if (test->type->detect(folder))
-			maildir_type_list_prepend(&result, test->type);
-		test = test->next;
-	}
-
-	return result;
 }
 
 int is_maildir(int fd, const char* folder)
@@ -597,7 +553,6 @@ int main(int argc, char** argv)
 	}
 
 	maildir_type_list_free(target_types);
-	maildir_type_list_free(type_list);
 
 	return 0;
 }

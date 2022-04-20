@@ -230,7 +230,7 @@ $(MOD_TARGET): | modules/.d
 	
 $(BIN_TARGET): | bin/.d
 	@$(ECHO_E) "\t[LD] $@"
-	$(SHOWCL)$(CC) $(LDFLAGS) -o $@ $(foreach M,$(MODS_$(notdir $(basename $@))),obj/$(M).o) $(call uls_libs,$(patsubst bin/%,%,$@))
+	$(SHOWCL)$(CC) $(LDFLAGS) -o $@ $(foreach M,$(MODS_$(notdir $(basename $@))),obj/$(M).o) -Wl,--as-needed $(call uls_libs,$(patsubst bin/%,%,$@))
 
 $(JAR_TARGET): | jar/.d
 	@$(ECHO_E) "\t[JAR] $@"
