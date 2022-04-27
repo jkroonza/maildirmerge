@@ -195,7 +195,6 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 				if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
 					continue;
 				check_ownership(sfd, de->d_name, st, ec, "%s/%s", subname, de->d_name);
-				msg_list_add(&mlist, subname, de->d_name);
 
 				const char* ssize = strstr(de->d_name, "S=");
 
@@ -229,11 +228,43 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 
 						last_flag = *flag;
 					}
-					if (!alphabetic)
+					if (!alphabetic) {
 						add_error(ec, "%s/%s: flags are not in alphabetic order.", subname, de->d_name);
+						if (fix_fixable) {
+							char t;
+							char *fflag = (char*)colon + 3;
+							char *oldname = strdup(de->d_name);
+							for (char *tflag = fflag; *tflag && *tflag != ','; ++tflag) {
+								t = *tflag;
+								char *aflag = tflag;
+								while (aflag > fflag && *(aflag-1) > t) {
+									*aflag = *(aflag-1);
+									aflag--;
+								}
+								*aflag = t;
+							}
+
+							/* reduce the risk of clobering a valid email file */
+							if (fstatat(sfd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 || errno != ENOENT) {
+								/* just fail silently */
+								strcpy(de->d_name, oldname);
+							} else if (renameat(sfd, oldname, sfd, de->d_name) < 0) {
+								printf("\nRename %s to %s failed: %s", oldname,
+										de->d_name, strerror(errno));
+								/* rename failed, so keep the old name for adding into mlist */
+								strcpy(de->d_name, oldname);
+							} else
+								fixed++;
+							free(oldname);
+						}
+					}
+
 				} else {
 					add_error(ec, "%s/%s: flags marker is not recognized, expected :2, - probably an unsupported version ...\n", subname, de->d_name);
 				}
+
+				/* only add here since alpha fix on flags can change de->d_name */
+				msg_list_add(&mlist, subname, de->d_name);
 			}
 			closedir(dir);
 		}
@@ -371,7 +402,7 @@ int main(int argc, char **argv)
 	progname = *argv;
 	int c;
 
-	while (( c = getopt_long(argc, argv, "h", options, NULL)) != -1) {
+	while (( c = getopt_long(argc, argv, "hF", options, NULL)) != -1) {
 		switch (c) {
 		case 0:
 			break;
