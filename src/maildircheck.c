@@ -9,12 +9,16 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #define MAX_STAT_ENOENT_RETRY		10
 
 static const char * progname;
 static const char * maildir_subs[] = { "cur", "new", "-tmp", NULL };
 static const char * valid_flags = "PRSTDF";
+
+static int fix_fixable = false;
+static int fixed = 0;
 
 /* tmp/ needs not be scanned.
  * ordering critical as stuff gets rename()d from new/ to cur/,
@@ -122,6 +126,10 @@ int myfstatat(int dirfd, const char *restrict pathname, struct stat *restrict st
 			add_error(ec, fmt ": Wrong ownership, uid=%lu is not %lu.", ## __VA_ARGS__, (unsigned long)st.st_uid, (unsigned long)uid); \
 		if (st.st_gid != gid) \
 			add_error(ec, fmt ": Wrong group, gid=%lu is not %lu.", ## __VA_ARGS__, (unsigned long)st.st_gid, (unsigned long)gid); \
+		if (fix_fixable && (st.st_uid != uid || st.st_gid != gid)) { \
+			fchownat(fd, path, uid, gid, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH); \
+			fixed++; \
+		} \
 	} \
 } while(0)
 
@@ -339,10 +347,14 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "USAGE: %s [options] folder [...]\n", progname);
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Display this text and terminate.\n");
+	fprintf(o, "  -F,--fix-fisable\n");
+	fprintf(o, "    Fix fixable errors, currently:\n");
+	fprintf(o, "     - ownership of files.\n");
 	fprintf(o, "Progam will exit with 0 exit code if, and only if none of the folders exhibit any errors:\n");
 	fprintf(o, "  0 - no errors.\n");
 	fprintf(o, "  1 - usage error (ie, we terminated due to a usage problem).\n");
 	fprintf(o, "  2 - errors were encountered, see output from program for details.\n");
+	fprintf(o, "  3 - errors were encountered, and possibly fixed.\n");
 	fprintf(o, "WARNING:  This doesn't currently check anything server (courier/dovecot etc ...) specific.\n");
 	fprintf(o, "SERIOUS WARNING: This uses stat ... a lot ... VERY slow on certain filesystems.\n");
 	exit(x);
@@ -350,6 +362,7 @@ void __attribute__((noreturn)) usage(int x)
 
 static struct option options[] = {
 	{ "help",		no_argument, NULL, 'h' },
+	{ "fix-fixable",no_argument, NULL, 'F' },
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -364,6 +377,9 @@ int main(int argc, char **argv)
 			break;
 		case 'h':
 			usage(0);
+		case 'F':
+			fix_fixable = true;
+			break;
 		default:
 			fprintf(stderr, "Option not implemented: %c.\n", c);
 			usage(1);
@@ -376,5 +392,5 @@ int main(int argc, char **argv)
 	c = 0;
 	while (argv[optind])
 		c += check_path(argv[optind++]);
-	return c ? 2 : 0;
+	return c ? (fixed ? 3 : 2) : 0;
 }
