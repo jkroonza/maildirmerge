@@ -1,3 +1,5 @@
+#include "filetools.h"
+
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -115,6 +117,75 @@ int myfstatat(int dirfd, const char *restrict pathname, struct stat *restrict st
 	return r;
 }
 
+static
+bool chrinstr(char c, const char* head, const char* tail)
+{
+	while (head < tail)
+		if (c == *head++)
+			return true;
+
+	return false;
+}
+
+/* We cannot assume alphabetic order here since fixing thereof may potentially
+ * have failed */
+/* Note that the exact same set of flags is NOT a subset of the flags itself
+ * such that if we have exact duplicate filenames (as is possible through a
+ * corrupted glusterfs filesystem) we won't nuke the only copy by accident.
+ */
+static
+bool flags_subset_of(const char* fn1, const char* fn2)
+{
+	const char* t;
+	const char* fs1 = strstr(fn1, ":2,");
+	const char* fs2 = strstr(fn2, ":2,");
+
+	if (!fs1 || !fs2)
+		return false;
+
+	/* skip over the markers. */
+	fs1 += 3;
+	fs2 += 3;
+
+	const char* fs1t = fs1;
+	while (*fs1t && *fs1t != ',')
+		++fs1t;
+
+	const char* fs2t = fs2;
+	while (*fs2t && *fs2t != ',')
+		++fs2t;
+
+	/* We WANT the tags for fn1 to be fewer than for fn2.  If that holds,
+	 * there is a chance, this is a quick out */
+	if ((fs1t - fs1) >= (fs2t - fs2))
+		return false;
+
+	/* all tags in fn1 must be in fn2 */
+	for (t = fs1; t < fs1t; t++)
+		if (!chrinstr(*t, fs2, fs2t))
+			return false;
+
+	/* at least one tag in fn2 must not be in fn1 */
+	for (t = fs2; t < fs2t; t++)
+		if (!chrinstr(*t, fs1, fs1t))
+			return true;
+
+	return false;
+
+}
+
+static
+bool copy_prefer_over(int fd, const char* a, const char* b)
+{
+	if (strncmp(a, "cur/", 4) == 0 && strncmp(b, "new/", 4) == 0) {
+		/* we prefer cur/ over new/, however, we still need files_identical check */
+	} else if (!flags_subset_of(b, a)) {
+		return false;
+	}
+
+	return !!files_identical(fd, a, NULL, fd, b, NULL);
+}
+
 #define add_error(ec, fmt, ...) do { printf("\n" fmt, ## __VA_ARGS__); fflush(stdout); ++(ec); } while(0)
 
 #define check_ownership(fd, path, st, ec, fmt, ...) do { \
@@ -222,6 +293,8 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 							break;
 						}
 
+						/* TODO: Can we incorporate a check here for DUPLICATE flags */
+
 						alphabetic &= *flag > last_flag;
 						if (!strchr(valid_flags, *flag))
 							add_error(ec, "%s/%s: invalid flag %c found.", subname, de->d_name, last_flag);
@@ -287,6 +360,27 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			for (i = 0; slist->fullnames[i]; ++i)
 				printf("\n - %s", slist->fullnames[i]);
 			fflush(stdout);
+
+			if (fix_fixable) {
+				const char* lkept = slist->fullnames[0];
+				for (i = 1; slist->fullnames[i]; ++i) {
+					if (copy_prefer_over(fd, lkept, slist->fullnames[i])) {
+						if (unlinkat(fd, slist->fullnames[i], 0) < 0) {
+							perror(slist->fullnames[i]);
+						} else
+							++fixed;
+					} else if (copy_prefer_over(fd, slist->fullnames[i], lkept)) {
+						if (unlinkat(fd, lkept, 0) < 0) {
+							perror(lkept);
+						} else
+							++fixed;
+						lkept = slist->fullnames[i];
+					} else {
+						printf("\nCannot choose between %s and %s.", lkept, slist->fullnames[i]);
+						fflush(stdout);
+					}
+				}
+			}
 		}
 	}
 
