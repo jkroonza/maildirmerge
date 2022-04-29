@@ -194,7 +194,7 @@ void proc_path(const char* path)
 		else if (human)
 			printf("%s has %s over %zu messages.\n", path, pretty_size(msgsize, bfr), msgcount);
 		else
-			printf("%s: has %zu B over %zu messages.\n", path, msgsize, msgcount);
+			printf("%s has %zu B over %zu messages.\n", path, msgsize, msgcount);
 		break;
 	case OUTPUT_TOTALSIZE:
 		printf("%zu\n", msgsize);
