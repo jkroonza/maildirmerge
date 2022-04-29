@@ -1,3 +1,4 @@
 /deps
-/bin
+/bin/*
+!/bin/maildirduperem
 /obj

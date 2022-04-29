@@ -438,10 +438,15 @@ endif
 .PHONY: install
 install : all
 	@echo "Preparing to install into $(DESTDIR)."
-ifneq ($(BIN_TARGET),)
+ifneq ($(BIN_TARGET)$(EXTRA_BINS),)
 	@$(ECHO_E) "\t[DIR] $(BINDIR)"
 	$(SHOWCL)install -d "$(DESTDIR)$(BINDIR)"
+endif
+ifneq ($(BIN_TARGET),)
 	$(SHOWCL)$(foreach B,$(BIN_TARGET),$(ECHO_E) "\t[BIN] $(B)"; install $(B) "$(DESTDIR)$(BINDIR)";)
+endif
+ifneq ($(EXTRA_BINS),)
+	$(SHOWCL)$(foreach B,$(EXTRA_BINS),$(ECHO_E) "\t[BIN] bin/$(B)"; install bin/$(B) "$(DESTDIR)$(BINDIR)";)
 endif
 ifneq ($(LIB_TARGET_SO),)
 	@$(ECHO_E) "\t[DIR] $(LIBDIR)"

@@ -1,0 +1,97 @@
+#! /bin/bash
+
+T="$(getopt -o "h" --long "dry-run,help,verbose" -n "$0" -- "$@")"
+
+eval set -- "${T}"
+
+function usage()
+{
+	local ex="$1"
+	local pn="$2"
+
+	echo "USAGE: $pn [options] path [checksum_file]"
+	echo "OPTIONS:"
+	echo "  --dry-run"
+	echo "    Don't actually do anything, just output what would be done."
+	echo "  --verbose"
+	echo "   Be very verbose, can be specified multiple times.  Should not normally be required."
+	echo "   1 time: output when files are already removed."
+	echo "   2 time: output initial file selections (this will list all files)."
+	echo "If checksum_file is provided, it should have been generated relative to path, using for example:"
+	echo "find . -type f -exec md5sum {} \;"
+	exit $ex
+}
+
+verbose=0
+dry_run=
+
+while [ $1 != -- ]; do
+	case "$1" in
+		-h|--help)
+			usage 0 "$0"
+			;;
+		--dry-run)
+			vn="${1:2}";
+			eval "${vn//-/_}=1"
+			;;
+		--verbose)
+			vn="${1:2}";
+			declare -n iv="${vn//-/_}"
+			(( ++iv ))
+			;;
+		*)
+			echo "Unknown option $1." >&2
+			usage 1 "$0"
+			;;
+	esac
+	shift
+done
+shift # --
+
+path=$1
+checksums=$2
+
+[ -z "${path}" ] && usage 1 "$0"
+
+cd "${path}" || exit 1
+
+if [ -n "${checksums}" ]; then
+	exec 3<"${checksums}" || exit 1
+else
+	exec 3< <(find . -type f -exec md5sum {} \;) || exit 1
+fi
+
+echo "Dry run: ${dry_run:-0}"
+echo "Verbose: ${verbose}"
+
+while read CS FN <&3; do
+	declare -n cvar="cvar_$CS"
+
+	if [ -z "${cvar}" ] || ! [ -r "${cvar}" ]; then
+		[ "${verbose}" -ge 2 ] && echo "$CS: $FN - initial select."
+		cvar="$FN"
+	elif ! [ -r "$FN" ]; then
+		[ "${verbose}" -ge 1 ] && "${CS}: $FN - already removed, keeping ${cvar}."
+	else
+		fn1="$(basename "${FN}")"
+		fn2="$(basename "${cvar}")"
+		ts1="${fn1%%.*}"
+		ts2="${fn2%%.*}"
+
+		#echo "${FN} > $ts1"
+		#echo "${cvar} > $ts2"
+
+		if [ -z "${ts1}" -o -z "${ts2}" -o "${fn1}" = "${ts1}" -o "${fn2}" = "${ts2}" ]; then
+			[ "${verbose}" -ge 1 ] && echo "Not considering non-timestamped file ${fn1}."
+		elif [ $ts1 -eq $ts2 ]; then
+			echo "Timestamps for ${FN} and ${cvar} are identical, can't choose, please manually fire one"
+		elif [ $ts1 -lt $ts2 ]; then
+			echo "$CS: Firing $cvar over $FN"
+			[ -z "${dry_run}" ] && rm "${cvar}"
+			cvar="$FN"
+		else
+			echo "$CS: Firing $FN over $cvar"
+			[ -z "${dry_run}" ] && rm "$FN"
+		fi
+	fi
+done
