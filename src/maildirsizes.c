@@ -79,20 +79,26 @@ void calc_size(int dir_fd, size_t *total_size, size_t *total_count, const char* 
 			continue;
 		}
 		while ((de = readdir(d))) {
+			unsigned long long msgsize;
+			struct stat st;
+
 			/* We ignore anything starting with a ., this covers . and .., which should
 			 * be the only folders in this place, everything else should be valid
 			 * maildir names ... */
 			if (de->d_name[0] == '.')
 				continue;
+
 			const char* S = strstr(de->d_name, "S=");
-			if (!S) {
-				fprintf(stderr, "INBOX%s/%s/%s: Invalid filename.\n", rpath,
-						*sub, de->d_name);
+			if (S) {
+				/* we can get the size from the filename ... let's just assume it's correct to avoid that stat call */
+				msgsize = strtoull(S+2, NULL, 10);
+			} else if (fstatat(sub_fd, de->d_name, &st, 0) == 0)  {
+				msgsize = st.st_size;
+			} else {
+				fprintf(stderr, "INBOX%s/%s/%s: filename doesn't have S= tag, and stat failed with '%s'.\n", rpath,
+					*sub, de->d_name, strerror(errno));
 				continue;
 			}
-			unsigned long long msgsize = strtoull(S+2, NULL, 10);
-
-			//printf("%s => %s => %llu\n", de->d_name, S, msgsize);
 
 			size += msgsize;
 			++count;
