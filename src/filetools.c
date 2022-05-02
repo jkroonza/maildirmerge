@@ -58,6 +58,10 @@ int files_identical(int fd1, const char* path1, const struct stat* st1, int fd2,
 	if (st1->st_size != st2->st_size)
 		return 0;
 
+	/* if they are the same file, short out */
+	if (st1->st_dev == st2->st_dev && st1->st_ino == st2->st_ino)
+		return 1;
+
 	f1 = openat(fd1, path1, O_RDONLY | AT_EMPTY_PATH);
 	if (f1 < 0) {
 		fdperror(fd1, path1, errno, "openat");
