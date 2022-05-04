@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 
 static const char * progname;
-static const char * maildir_subs[] = { "new", "cur", NULL }; /* ignore tmp here */
+static const char * maildir_subs[] = { "cur", "new", NULL }; /* ignore tmp here */
 
 #define OUTPUT_ALL			0
 #define OUTPUT_TOTALS		1
