@@ -134,28 +134,30 @@ int get_folderfd(const char* fldrname, int basefd)
 				return -1;
 
 			mode_t m = 0700;
+			uid_t u = 0;
+			gid_t g = 0;
 			struct stat st;
-			if (fstat(basefd, &st) == 0)
+			if (fstat(basefd, &st) == 0) {
 				m = st.st_mode; /* attempt to clone from parent */
+				if (geteuid() == 0) {
+					/* we can chown() */
+					u = st.st_uid;
+					g = st.st_gid;
+				}
+			}
 			if (mkdirat(basefd, fldrname, m) < 0)
 				return -1;
+			if (u || g)
+				fchownat(basefd, fldrname, u, g, 0);
 			fd = openat(basefd, fldrname, O_RDONLY);
 			if (fd < 0)
 				return -1;
 
-			/* create folders for cur, new and tmp */
-			if (mkdirat(fd, "cur", m) < 0) {
-				close(fd);
-				return -1;
-			}
-			if (mkdirat(fd, "new", m) < 0) {
-				close(fd);
-				return -1;
-			}
-			if (mkdirat(fd, "tmp", m) < 0) {
-				close(fd);
-				return -1;
-			}
+#define mksub(x)	do { if (mkdirat(fd, x, m) < 0) { close(fd); return -1; } if (u || g) fchownat(fd, x, u, g, 0); } while(0)
+			mksub("cur");
+			mksub("new");
+			mksub("tmp");
+#undef mksub
 		}
 
 		struct folder_cache_entry * ce = malloc(sizeof(*ce));
