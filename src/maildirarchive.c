@@ -223,7 +223,7 @@ int main(int argc, char** argv)
 
 	progname = *argv;
 
-	while ((c = getopt_long(argc, argv, "nf:s:m:", options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "nf:s:m:R", options, NULL)) != -1) {
 		switch (c) {
 		case 0:
 			break;
