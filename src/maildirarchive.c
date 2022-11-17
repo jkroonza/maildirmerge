@@ -193,6 +193,10 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "    Maximum age of emails to retain in source folder, this is passed to the\n");
 	fprintf(o, "    date CLI tool using date -d 'string' - so please verify this usage.\n");
 	fprintf(o, "    defaults to '%s'.\n", DEFAULT_MAXAGE);
+	fprintf(o, "  -R|--replace\n");
+	fprintf(o, "    Do NOT use REPLACE_NOREPLACE.  This option can potentially destroy email,\n");
+	fprintf(o, "    as an extra safety a stat() call will be made prior to rename, and if the\n");
+	fprintf(o, "    target file exists will be skipped.  This is racey, not to mention bad for performance.\n");
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
@@ -203,6 +207,7 @@ static struct option options[] = {
 	{ "format",			required_argument,	NULL,	'f' },
 	{ "sourcefolder",	required_argument,	NULL,	's' },
 	{ "maxage",			required_argument,	NULL,	'm' },
+	{ "replace",		no_argument,		NULL,	'R' },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -213,6 +218,8 @@ int main(int argc, char** argv)
 		  *base, *_maxage = DEFAULT_MAXAGE;
 	char* sourcename = NULL;
 	time_t maxage;
+	unsigned rename_flags = RENAME_NOREPLACE;
+	struct stat st;
 
 	progname = *argv;
 
@@ -231,6 +238,9 @@ int main(int argc, char** argv)
 			break;
 		case 'm':
 			_maxage = optarg;
+			break;
+		case 'R':
+			rename_flags &= ~RENAME_NOREPLACE;
 			break;
 		case 'h':
 			usage(0);
@@ -347,9 +357,28 @@ int main(int argc, char** argv)
 					continue;
 				}
 
-				if (renameat2(cfd, de->d_name, tfd, tfname2, RENAME_NOREPLACE) < 0) {
+				if ((rename_flags & RENAME_NOREPLACE) == 0) {
+					if (fstatat(tfd, tfname2, &st, 0) == 0) {
+						errno = EEXIST;
+						lerror("%s/%s/%s => %s/%s/%s/ (stat)",
+							sourcename, sfn, de->d_name, base, tfname, sfn);
+						continue;
+					} else if (errno != ENOENT) {
+						lerror("%s/%s/%s => %s/%s/%s/ (stat)",
+							sourcename, sfn, de->d_name, base, tfname, sfn);
+						continue;
+					}
+				}
+
+				if (renameat2(cfd, de->d_name, tfd, tfname2, rename_flags) < 0) {
 					lerror("%s/%s/%s => %s/%s/%s/",
 							sourcename, sfn, de->d_name, base, tfname, sfn);
+					if ((rename_flags & RENAME_NOREPLACE) != 0 && errno == EINVAL &&
+						fstatat(tfd, tfname2, &st, 0) == -1 && errno == ENOENT)
+					{
+						fprintf(stderr, "We received EINVAL on rename using RENAME_NOREPLACE.  Possibly the filesystem doesn't like this, so please retry using (potentially dangerous) -R.\n");
+						goto errout;
+					}
 				}
 			}
 			closedir(dir); /* also closes cfd */
