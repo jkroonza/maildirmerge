@@ -15,6 +15,7 @@
 static const char* progname = NULL;
 static int force = 0, dry_run = 0, pop3_merge_seen = 0;
 static int pop3_uidl = 0;
+static int subscribe = 0;
 static const char* pop3_redirect = NULL;
 
 static
@@ -39,6 +40,9 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "    This is mutually exclusive with --pop3-redirect.\n");
 	fprintf(o, "    By default any previously seen messages are left behind if the destination\n");
 	fprintf(o, "    is detected to have POP3 active.  It doesn't care when last POP3 has been used currently.\n");
+	fprintf(o, "  --subscribe\n");
+	fprintf(o, "    For unknown folder sources (ie, we're unable to check if the folder is subscribed), auto subscribe.\n");
+	fprintf(o, "    NOTE:  This only takes effect if the source maildir type is unknown/unsupported.\n");
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
@@ -316,7 +320,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 		if (!is_pop3 || pop3_merge_seen || !message_seen(de->d_name)) {
 			maildir_move(sfd, source, tfd, target, "cur", de->d_name);
 			if (pop3_uidl) {
-				if (!stype->pop3_get_uidl) {
+				if (!stype || !stype->pop3_get_uidl) {
 					fprintf(stderr, "UIDL transfer requested but source doesn't support UIDL retrieval.\n");
 				} else {
 					char *basename = strdupa(de->d_name);
@@ -437,7 +441,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 			/* it doesn't exist, so we can simply rename into, and then check subscriptions */
 			maildir_move(sourcefd, source, targetfd, target, "", de->d_name);
 
-			if (stype->imap_is_subscribed && stype->imap_is_subscribed(stype_pvt, de->d_name)) {
+			if (stype ? stype->imap_is_subscribed && stype->imap_is_subscribed(stype_pvt, de->d_name) : subscribe) {
 				if (dry_run) {
 					printf("Will subscribe to %s on target.\n", de->d_name);
 				} else {
@@ -479,6 +483,7 @@ static struct option options[] = {
 	{ "pop3-redirect",	required_argument,	NULL,	'r' },
 	{ "pop3-merge-seen",no_argument,		&pop3_merge_seen, 1 },
 	{ "pop3-uidl",		no_argument,		&pop3_uidl, 1 },
+	{ "subscribe",		no_argument,		&subscribe, 1 },
 	{ NULL, 0, NULL, 0 },
 };
 
