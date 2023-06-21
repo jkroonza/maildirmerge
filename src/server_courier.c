@@ -1,5 +1,4 @@
 #include "servertypes.h"
-#include "uidl.h"
 
 #include <stdlib.h>
 #include <stdio.h>
