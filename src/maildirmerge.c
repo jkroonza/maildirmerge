@@ -11,6 +11,7 @@
 #include <dirent.h>
 
 #include "servertypes.h"
+#include "filetools.h"
 
 static const char* progname = NULL;
 static int force = 0, dry_run = 0, pop3_merge_seen = 0;
@@ -46,161 +47,6 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
-}
-
-int is_maildir(int fd, const char* folder)
-{
-	const char* subs[] = { "new", "cur", "tmp", NULL };
-	struct stat st;
-	int i;
-
-	for (i = 0; subs[i]; ++i) {
-		if (fstatat(fd, subs[i], &st, 0) < 0) {
-			fprintf(stderr, "%s/%s: %s\n", folder, subs[i], strerror(errno));
-			return 0;
-		}
-		if ((st.st_mode & S_IFMT) != S_IFDIR) {
-			fprintf(stderr, "%s/%s: is not a folder\n", folder, subs[i]);
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
-/**
- * This retrieves a file descriptor that for the folder, or -1 on error
- */
-static
-int get_maildir_fd_at(int bfd, const char* folder)
-{
-	struct stat st;
-	int fd;
-
-	if (fstatat(bfd, folder, &st, 0) < 0) {
-		perror(folder);
-		return -1;
-	}
-	if ((st.st_mode & S_IFMT) != S_IFDIR) {
-		fprintf(stderr, "%s: is not a folder\n", folder);
-		return -1;
-	}
-
-	fd = openat(bfd, folder, O_RDONLY);
-	if (fd < 0) {
-		perror(folder);
-		return -1;
-	}
-
-	if (!is_maildir(fd, folder)) {
-		close(fd);
-		fd = -1;
-	}
-
-	return fd;
-}
-
-static
-int get_maildir_fd(const char* folder)
-{
-	return get_maildir_fd_at(AT_FDCWD, folder);
-}
-
-static
-int maildir_create_sub(int bfd, const char* target, const char* foldername)
-{
-	struct stat st;
-	int fd = -1;
-
-	if (fstat(bfd, &st) < 0) {
-		perror(target);
-		return -1;
-	}
-
-	if (dry_run) {
-		/* this is outright nasty */
-		printf("Would create maildir %s/%s (assuming it doesn't exist).\n",
-				target, foldername);
-		fd = get_maildir_fd_at(bfd, foldername);
-		if (fd < 0) {
-			/* this is outright wrong, but it works */
-			fd = dup(bfd);
-		}
-		return fd;
-	}
-
-	if (mkdirat(bfd, foldername, st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) == 0) {
-		fd = openat(bfd, foldername, O_RDONLY);
-		if (fd < 0) {
-			fprintf(stderr, "%s/%s: %s\n", target, foldername, strerror(errno));
-			return -1;
-		}
-
-		mkdirat(fd, "new", st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
-		mkdirat(fd, "cur", st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
-		mkdirat(fd, "tmp", st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO));
-
-		/* create an empty file to indicate sub-folder */
-		close(openat(fd, "maildirfolder", O_CREAT | O_WRONLY, 0600));
-
-		if (geteuid() == 0) {
-			/* we are root */
-			fchown(fd, st.st_uid, st.st_gid);
-			fchownat(fd, "new", st.st_uid, st.st_gid, 0);
-			fchownat(fd, "cur", st.st_uid, st.st_gid, 0);
-			fchownat(fd, "tmp", st.st_uid, st.st_gid, 0);
-			fchownat(fd, "maildirfolder", st.st_uid, st.st_gid, 0);
-		}
-		return fd;
-	}
-
-	if (errno == EEXIST)
-		return get_maildir_fd_at(bfd, foldername);
-
-	fprintf(stderr, "mkdir(%s/%s): %s\n", target, foldername, strerror(errno));
-	return -1;
-}
-
-static
-int message_seen(const char* filename)
-{
-	const char* p = strchr(filename, ':');
-	const char* c;
-	if (!p) {/* definitely no flags, so can't be seen */
-		fprintf(stderr, "WARNING: No colon (info delimeter) found in %s.\n", filename);
-		return 0;
-	}
-	c = strchr(++p, ',');
-	if (!c) {
-		fprintf(stderr, "WARNING: No comma found in info portion of %s, separating version from flags.\n", filename);
-		return 0;
-	}
-
-	if ((c-p) != 1 || *p != '2') {
-		fprintf(stderr, "WARNING: Unrecognized info version (%.*s) in %s, assuming not seen.\n",
-				(int)(c-p), p, filename);
-	}
-
-	while (*++c) {
-		if (*c == 'S')
-			return 1;
-		if (*c == ',') /* Dovecot extension, we can terminate here */
-			return 0;
-	}
-	return 0;
-}
-
-static
-void maildir_move(int sfd, const char* source, int tfd, const char* target, const char* sub, const char* fname)
-{
-	if (dry_run) {
-		printf("Rename: %s/%s/%s -> %s/%s/%s\n",
-				source, sub, fname, target, sub, fname);
-	} else {
-		if (renameat(sfd, fname, tfd, fname) < 0)
-			fprintf(stderr, "rename %s/%s/%s -> %s/%s/%s failed: %s\n",
-				source, sub, fname, target, sub, fname, strerror(errno));
-	}
 }
 
 #define out_error_if(x, f, ...) do { if (x) { fprintf(stderr, f ": %s\n", ## __VA_ARGS__, strerror(errno)); goto out; } } while(0)
@@ -274,7 +120,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 				continue;
 		}
 
-		maildir_move(sfd, source, tfd, target, "new", de->d_name);
+		maildir_move(sfd, source, tfd, target, "new", de->d_name, dry_run);
 	}
 	closedir(dir); dir = NULL; sfd = -1;
 	close(tfd); tfd = -1;
@@ -318,7 +164,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 		}
 
 		if (!is_pop3 || pop3_merge_seen || !message_seen(de->d_name)) {
-			maildir_move(sfd, source, tfd, target, "cur", de->d_name);
+			maildir_move(sfd, source, tfd, target, "cur", de->d_name, dry_run);
 			if (pop3_uidl) {
 				if (!stype || !stype->pop3_get_uidl) {
 					fprintf(stderr, "UIDL transfer requested but source doesn't support UIDL retrieval.\n");
@@ -344,7 +190,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 			}
 		} else if (pop3_redirect) {
 			if (rfd < 0) {
-				rfd = maildir_create_sub(targetfd, target, pop3_redirect);
+				rfd = maildir_create_sub(targetfd, target, pop3_redirect, dry_run);
 				if (rfd < 0)
 					exit(1);
 				int t = openat(rfd, "cur", O_RDONLY);
@@ -357,7 +203,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 				asprintf(&redirectname, "%s/%s", target, pop3_redirect);
 			}
 
-			maildir_move(sfd, source, rfd, redirectname, "cur", de->d_name);
+			maildir_move(sfd, source, rfd, redirectname, "cur", de->d_name, dry_run);
 		} else if (dry_run) {
 			printf("%s/cur/%s: left behind (seen, target is POP3, no redirect).\n",
 					source, de->d_name);
@@ -439,7 +285,7 @@ void maildir_merge(const char* target, int targetfd, struct maildir_type_list *t
 
 		} else if (errno == ENOENT) {
 			/* it doesn't exist, so we can simply rename into, and then check subscriptions */
-			maildir_move(sourcefd, source, targetfd, target, "", de->d_name);
+			maildir_move(sourcefd, source, targetfd, target, "", de->d_name, dry_run);
 
 			if (stype ? stype->imap_is_subscribed && stype->imap_is_subscribed(stype_pvt, de->d_name) : subscribe) {
 				if (dry_run) {
