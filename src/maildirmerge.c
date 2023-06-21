@@ -45,7 +45,7 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "    For unknown folder sources (ie, we're unable to check if the folder is subscribed), auto subscribe.\n");
 	fprintf(o, "    NOTE:  This only takes effect if the source maildir type is unknown/unsupported.\n");
 	fprintf(o, "  -h|--help\n");
-	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
+	fprintf(o, "    This help text.\n");
 	exit(x);
 }
 
