@@ -15,4 +15,14 @@ int message_seen(const char* filename);
 
 void maildir_move(int sfd, const char* source, int tfd, const char* target, const char* sub, const char* fname, bool dry_run);
 
+struct mail_header {
+	char * header;
+	char **value; /* NULL terminated list of values */
+	struct mail_header* next;
+};
+
+struct mail_header* get_mail_header(int sfd, const char* filename);
+const struct mail_header* find_mail_header(const struct mail_header* head, const char* header);
+void free_mail_header(struct mail_header* head);
+
 #endif

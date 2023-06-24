@@ -11,6 +11,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 static
 void fdperror(int fd, const char* path, int err, const char* operation)
@@ -244,5 +246,133 @@ void maildir_move(int sfd, const char* source, int tfd, const char* target, cons
 		if (renameat(sfd, fname, tfd, fname) < 0)
 			fprintf(stderr, "rename %s/%s/%s -> %s/%s/%s failed: %s\n",
 				source, sub, fname, target, sub, fname, strerror(errno));
+	}
+}
+
+static
+void insert_mail_header(struct mail_header ** headp, char* header, char* value)
+{
+	struct mail_header *insp = (struct mail_header*)find_mail_header(*headp, header);  /* we can safely cast the const away here */
+	if (!insp) {
+		insp = malloc(sizeof(*insp));
+		insp->header = header;
+		insp->value = malloc(sizeof(*insp->value) * 2);
+		insp->value[0] = value;
+		insp->value[1] = NULL;
+		insp->next = *headp;
+		*headp = insp;
+		return;
+	}
+
+	free(header);
+	int i = 1;
+	while (insp->value[i])
+		++i;
+	insp->value[i++] = value;
+	if ((i & (i-1)) == 0)
+		insp->value = realloc(insp->value, sizeof(*insp->value) * i * 2); /* if this fails we will segfault */
+	insp->value[i] = NULL;
+}
+
+struct mail_header* get_mail_header(int sfd, const char* filename)
+{
+	size_t bfrsize = 8192, slen;
+	char *bfr = NULL, *header = NULL, *value = NULL;
+	int fd = openat(sfd, filename, O_RDONLY);
+	struct mail_header *head = NULL;
+
+	errno= 0;
+
+	if (fd < 0)
+		return NULL;
+	FILE* fp = fdopen(fd, "r");
+	if (!fp)
+		goto errout;
+	fd = -1; /* taken over by fp */
+
+	bfr = malloc(bfrsize);
+	if (!bfr)
+		goto errout;
+
+	while (fgets(bfr, bfrsize, fp)) {
+		slen = strlen(bfr);
+		while (bfr[slen-1] != '\n') {
+			if (slen != bfrsize - 1) /* we have a NULL character in the input */
+				goto errout;
+
+			char *t = realloc(bfr, bfrsize *= 2);
+			if (!t)
+				goto errout;
+			bfr = t;
+
+			/* now we're looking to read from the file and append it to the existing slen string */
+			if (!fgets(bfr + slen, bfrsize - slen, fp))
+				goto errout;
+
+			slen = strlen(bfr);
+		}
+
+		/* trim trailing \r\n characters */
+		while (slen--) {
+			if (bfr[slen] != '\n' && bfr[slen] != '\r')
+				break;
+			bfr[slen] = 0;
+		}
+
+		if (!*bfr)
+			break; /* headers are done */
+
+		if (!isspace(*bfr)) {
+			/* new header */
+			if (header)
+				insert_mail_header(&head, header, value);
+
+			char *v = strchr(bfr, ':');
+			*v++ = '\0';
+			header = strdup(bfr);
+
+			while (isspace(*v))
+				++v;
+
+			value = strdup(v);
+		} else {
+			/* appending to existing header */
+			char * t = realloc(value, strlen(value) + strlen(bfr) + 1);
+			if (!t)
+				break;
+			value = t;
+			strcat(value, bfr);
+		}
+	}
+errout:
+	if (header)
+		insert_mail_header(&head, header, value);
+
+	if (fp)
+		fclose(fp);
+	if (fd >= 0)
+		close(fd);
+	if (bfr)
+		free(bfr);
+
+	return head;
+}
+
+const struct mail_header* find_mail_header(const struct mail_header* head, const char* header)
+{
+	while (head) {
+		if (strcasecmp(head->header, header) == 0)
+			break;
+		head = head->next;
+	}
+	return head;
+}
+
+void free_mail_header(struct mail_header* head)
+{
+	while (head) {
+		struct mail_header *next = head->next;
+		free(head);
+		head = next;
 	}
 }
