@@ -323,18 +323,28 @@ struct mail_header* get_mail_header(int sfd, const char* filename)
 			break; /* headers are done */
 
 		if (!isspace(*bfr)) {
-			/* new header */
-			if (header)
-				insert_mail_header(&head, header, value);
 
 			char *v = strchr(bfr, ':');
-			*v++ = '\0';
-			header = strdup(bfr);
+			if (v) {
+			/* new header */
+				if (header)
+					insert_mail_header(&head, header, value);
 
-			while (isspace(*v))
-				++v;
+				*v++ = '\0';
+				header = strdup(bfr);
 
-			value = strdup(v);
+				while (isspace(*v))
+					++v;
+
+				value = strdup(v);
+			} else if (header) {
+				// no : - this is outright wrong, assume incorrect/invalid mapping and append to existing buffer.
+				char * t = realloc(value, strlen(value) + strlen(bfr) + 1);
+				if (!t)
+					break;
+				value = t;
+				strcat(value, bfr);
+			}
 		} else {
 			/* appending to existing header */
 			char * t = realloc(value, strlen(value) + strlen(bfr) + 1);
