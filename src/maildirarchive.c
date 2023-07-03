@@ -14,6 +14,8 @@
 #include <stdbool.h>
 #include <ctype.h>
 
+#include "servertypes.h"
+
 #define lerror(fmt, ...) fprintf(stderr, fmt ": %s.\n", ##__VA_ARGS__, strerror(errno))
 
 #define DEFAULT_MAXAGE		"1 year ago"
@@ -98,7 +100,7 @@ bool valid_foldername(const char* fldrname)
 }
 
 static
-int get_folderfd(const char* fldrname, int basefd)
+int get_folderfd(const char* fldrname, int basefd, struct maildir_type_list* stype)
 {
 	// keep re-sorting according to most recently used, on the assumption that
 	// we will typically get files linked into the dirent tree in some ordering
@@ -153,6 +155,16 @@ int get_folderfd(const char* fldrname, int basefd)
 			if (fd < 0)
 				return -1;
 
+			while (stype) {
+				if (stype->type->imap_subscribe) {
+					if (!stype->pvt && stype->type->open)
+						stype->pvt = stype->type->open(fldrname, basefd);
+					if (stype->pvt)
+						stype->type->imap_subscribe(stype->pvt, fldrname);
+				}
+				stype = stype->next;
+			}
+
 #define mksub(x)	do { if (mkdirat(fd, x, m) < 0) { close(fd); return -1; } if (u || g) fchownat(fd, x, u, g, 0); } while(0)
 			mksub("cur");
 			mksub("new");
@@ -197,6 +209,8 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "    Do NOT use REPLACE_NOREPLACE.  This option can potentially destroy email,\n");
 	fprintf(o, "    as an extra safety a stat() call will be made prior to rename, and if the\n");
 	fprintf(o, "    target file exists will be skipped.  This is racey, not to mention bad for performance.\n");
+	fprintf(o, "  -S|--subscribe\n");
+	fprintf(o, "    Auto-subscribe to newly created folders.\n");
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Enable force mode, permits overriding certain safeties.\n");
 	exit(x);
@@ -208,6 +222,7 @@ static struct option options[] = {
 	{ "sourcefolder",	required_argument,	NULL,	's' },
 	{ "maxage",			required_argument,	NULL,	'm' },
 	{ "replace",		no_argument,		NULL,	'R' },
+	{ "subscribe",		no_argument,		NULL,	'S' },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -220,6 +235,8 @@ int main(int argc, char** argv)
 	time_t maxage;
 	unsigned rename_flags = RENAME_NOREPLACE;
 	struct stat st;
+	bool subscribe = false;
+	struct maildir_type_list* stype = NULL;
 
 	progname = *argv;
 
@@ -241,6 +258,9 @@ int main(int argc, char** argv)
 			break;
 		case 'R':
 			rename_flags &= ~RENAME_NOREPLACE;
+			break;
+		case 'S':
+			subscribe = true;
 			break;
 		case 'h':
 			usage(0);
@@ -276,6 +296,14 @@ int main(int argc, char** argv)
 		if (basefd < 0) {
 			perror(base);
 			goto errout;
+		}
+
+		if (subscribe) {
+			stype = maildir_find_type(base);
+			if (!stype) {
+				fprintf(stderr, "%s: We need to be able to determine the folder type if we're to auto-subscribe.\n", base);
+				goto errout;
+			}
 		}
 
 		if (sourcefolder) {
@@ -344,7 +372,7 @@ int main(int argc, char** argv)
 					continue;
 				}
 
-				int tfd = get_folderfd(tfname, basefd);
+				int tfd = get_folderfd(tfname, basefd, stype);
 				if (tfd < 0) {
 					lerror("%s/%s", base, tfname);
 					continue;
@@ -384,7 +412,7 @@ int main(int argc, char** argv)
 			closedir(dir); /* also closes cfd */
 		}
 
-		get_folderfd(NULL, -1);
+		get_folderfd(NULL, -1, NULL);
 
 		free(sourcename);
 		sourcename = NULL;
@@ -394,6 +422,8 @@ int main(int argc, char** argv)
 
 		close(basefd);
 		basefd = -1;
+
+		maildir_type_list_free(stype);
 	}
 
 	return 0;
@@ -402,8 +432,10 @@ errout:
 		close(basefd);
 	if (sfd >= 0)
 		close(sfd);
+	if (stype)
+		maildir_type_list_free(stype);
 
-	get_folderfd(NULL, -1);
+	get_folderfd(NULL, -1, NULL);
 	free(sourcename);
 
 	return 1;

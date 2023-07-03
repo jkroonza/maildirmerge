@@ -8,7 +8,7 @@ MODS_maildirmerge=maildirmerge $(server_types) filetools
 MODS_maildirsizes=maildirsizes
 MODS_maildircheck=maildircheck filetools
 MODS_maildirreconstruct=maildirreconstruct filetools $(server_types)
-MODS_maildirarchive=maildirarchive
+MODS_maildirarchive=maildirarchive $(server_types)
 MODS_maildirdate2filename=maildirdate2filename $(server_types) filetools
 
 include Makefile.inc
