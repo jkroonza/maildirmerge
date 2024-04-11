@@ -245,19 +245,18 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 		if (forceflags)
 			++subname;
 		sfd = openat(fd, subname, O_RDONLY);
-		if (sfd < 0 && errno == ENOENT && fix_fixable) {
-			mkdirat(fd, subname, 0700);
-			sfd = openat(fd, subname, O_RDONLY);
-			if (sfd >= 0) {
-				fixed++;
-				int t = errno;
-				fchownat(sfd, "", uid, gid, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
-				errno = t;
-			}
-		}
 		if (sfd < 0) {
 			add_error(ec, "%s: %s.", subname, strerror(errno));
-			continue;
+			if (errno == ENOENT && fix_fixable) {
+				mkdirat(fd, subname, 0700);
+				sfd = openat(fd, subname, O_RDONLY);
+				if (sfd >= 0) {
+					fixed++;
+					fchownat(sfd, "", uid, gid, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+				}
+			}
+			if (sfd < 0)
+				continue;
 		}
 
 		check_ownership(sfd, "", st, ec, "%s", subname);
