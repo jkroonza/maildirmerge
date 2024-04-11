@@ -223,6 +223,13 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 			add_error(ec, "maildirfolder: %s", strerror(errno));
 		} else if (*rpath) {
 			add_error(ec, "Expected to find a file called maildirfolder");
+			if (fix_fixable) {
+				int t = openat(fd, "maildirfolder", O_CREAT, 0600);
+				if (t >= 0) {
+					fchownat(t, "", uid, gid, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+					close(t);
+				}
+			}
 		}
 	} else if (!*rpath) {
 		add_error(ec, "Did not expect to find a file called maildirfolder");
