@@ -17,7 +17,7 @@
 
 static const char * progname;
 static const char * maildir_subs[] = { "cur", "new", "-tmp", NULL };
-static const char * valid_flags = "PRSTDF";
+static const char * valid_flags = "PRSTDFabcdefghijklmnopqrstuvwxyz";
 
 static int fix_fixable = false;
 static int fixed = 0;
