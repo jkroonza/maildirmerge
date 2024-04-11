@@ -307,7 +307,7 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 
 						alphabetic &= *flag > last_flag;
 						if (!strchr(valid_flags, *flag))
-							add_error(ec, "%s/%s: invalid flag %c found.", subname, de->d_name, last_flag);
+							add_error(ec, "%s/%s: invalid flag %c found.", subname, de->d_name, *flag);
 
 						last_flag = *flag;
 					}
