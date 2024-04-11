@@ -170,6 +170,12 @@ int get_folderfd(const char* fldrname, int basefd, struct maildir_type_list* sty
 			mksub("new");
 			mksub("tmp");
 #undef mksub
+
+			int t = openat(fd, "maildirfolder", O_CREAT, 0600);
+			if (t >= 0) {
+				fchownat(t, "", u, g, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+				close(t);
+			}
 		}
 
 		struct folder_cache_entry * ce = malloc(sizeof(*ce));
