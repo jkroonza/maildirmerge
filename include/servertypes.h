@@ -1,8 +1,16 @@
 #ifndef __SERVERTYPES_H__
 #define __SERVERTYPES_H__
 
+#include <stdbool.h>
+
+enum server_bugs {
+	root_maildirfolder = 1, /* dovecot marks root folders as begin a subfolder. */
+};
+
 struct maildir_type {
 	const char* label;
+
+	enum server_bugs buglist;
 
 	/** returns non-zero if the given path is detected as being of this type */
 	int (*detect)(const char* folder);
@@ -37,6 +45,12 @@ struct maildir_type {
 	/** close the structure, fee stuff */
 	void (*close)(void* pvt);
 };
+
+inline
+bool server_has_bug(const struct maildir_type *mt, enum server_bugs bug)
+{
+	return (mt->buglist & bug) == bug;
+}
 
 struct maildir_type_list {
 	const struct maildir_type *type;
