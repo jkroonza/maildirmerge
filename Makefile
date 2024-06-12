@@ -2,7 +2,7 @@ TARGET_BINS=maildirmerge maildirsizes maildircheck maildirreconstruct maildirarc
 
 EXTRA_BINS=maildirduperem
 
-server_types=servertypes server_courier
+server_types=servertypes server_courier server_dovecot
 
 MODS_maildirmerge=maildirmerge $(server_types) filetools
 MODS_maildirsizes=maildirsizes
