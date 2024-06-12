@@ -100,7 +100,7 @@ int dovecot_imap_is_subscribed(void* _p, const char* fldrname)
 		char *nl = strchr(linebuf, '\n');
 		if (nl)
 			*nl = 0;
-		if (strcmp(fldrname, linebuf) == 0)
+		if (strcmp(fldrname + 1 /* skip leading . */, linebuf) == 0)
 			return 1;
 	}
 
@@ -153,7 +153,7 @@ void dovecot_imap_subscribe(void* _p, const char* fldrname)
 		close(sfd);
 	}
 
-	write(tfd, fldrname, strlen(fldrname));
+	write(tfd, fldrname + 1 /* skip leading . */, strlen(fldrname));
 	write(tfd, "\n", 1);
 	close(tfd);
 
