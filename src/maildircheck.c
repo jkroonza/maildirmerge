@@ -140,8 +140,12 @@ bool flags_subset_of(const char* fn1, const char* fn2)
 	const char* fs1 = strstr(fn1, ":2,");
 	const char* fs2 = strstr(fn2, ":2,");
 
-	if (!fs1 || !fs2)
+	if (!fs2)
 		return false;
+
+	/* if fs1 doesn't have flags it's *obviously* a subset of fs2's flags */
+	if (!fs1)
+		return true;
 
 	/* skip over the markers. */
 	fs1 += 3;
