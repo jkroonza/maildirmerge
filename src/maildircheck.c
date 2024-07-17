@@ -210,7 +210,7 @@ int check_fdpath(int fd, const char* rpath, uid_t uid, gid_t gid)
 	const char ** sp = maildir_subs;
 	const char * subname;
 	int ec = 0, sfd;
-	printf("INBOX%s:", rpath); fflush(stdout);
+	printf("%s:", rpath + 1 /* leading . */); fflush(stdout);
 	int noscan;
 	int forceflags;
 	DIR *dir;
@@ -488,7 +488,7 @@ void __attribute__((noreturn)) usage(int x)
 	fprintf(o, "USAGE: %s [options] folder [...]\n", progname);
 	fprintf(o, "  -h|--help\n");
 	fprintf(o, "    Display this text and terminate.\n");
-	fprintf(o, "  -F,--fix-fisable\n");
+	fprintf(o, "  -F,--fix-fixable\n");
 	fprintf(o, "    Fix fixable errors, currently:\n");
 	fprintf(o, "     - ownership of files.\n");
 	fprintf(o, "Progam will exit with 0 exit code if, and only if none of the folders exhibit any errors:\n");
