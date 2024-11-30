@@ -24,7 +24,7 @@ Tool to read all the headers for emails in a specific folder and ensure that
 the timestamp in the filename correlates with the Date: header.
 
 ## maildirmerge
-Was written as a kind of "quick fix" to emrge maildirs semi intelligently.  The
+Was written as a kind of "quick fix" to merge maildirs semi intelligently.  The
 idea here was that we've got a mix of IMAP and POP3 users, a domain migrated
 and we ended up in a situation where users had two separate mailboxes that
 needed to be merged.  The normal strategy is to just copy all mail over the
